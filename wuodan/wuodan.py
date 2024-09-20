@@ -1,6 +1,10 @@
 import os
 import mmap
 import re
+import gzip
+import bz2
+import lzma
+import zipfile
 import argparse
 import psutil
 import time
@@ -8,23 +12,41 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from queue import Queue
 from tqdm import tqdm
 
-def search_file_mmap(file_path, search_string, use_regex=False):
+def search_file(file_path, search_string, use_regex=False):
     """Search a file for the given string or regex."""
     try:
-        with open(file_path, 'r') as f:
-            with mmap.mmap(f.fileno(), 0, access=mmap.ACCESS_READ) as mm:
-                file_content = mm.read().decode('utf-8', errors='ignore')
-                
-                
-                for line_num, line in enumerate(file_content.splitlines(), 1):
-                    if use_regex:
-                        if re.search(search_string, line):
-                            return f"Found in {file_path} on line {line_num}: {line.strip()}"
-                    else:
-                        if search_string in line:
-                            return f"Found in {file_path} on line {line_num}: {line.strip()}"
+        if file_path.endswith('.gz'):
+            with gzip.open(file_path, 'rt', encoding='utf-8', errors='ignore') as f:
+                return search_lines(f, file_path, search_string, use_regex)
+        elif file_path.endswith('.bz2'):
+            with bz2.open(file_path, 'rt', encoding='utf-8', errors='ignore') as f:
+                return search_lines(f, file_path, search_string, use_regex)
+        elif file_path.endswith('.xz'):
+            with lzma.open(file_path, 'rt', encoding='utf-8', errors='ignore') as f:
+                return search_lines(f, file_path, search_string, use_regex)
+        elif file_path.endswith('.zip'):
+            with zipfile.ZipFile(file_path, 'r') as z:
+                for zip_info in z.infolist():
+                    with z.open(zip_info, 'r') as f:
+                        return search_lines((line.decode('utf-8', errors='ignore') for line in f), file_path + "::" + zip_info.filename, search_string, use_regex)
+        else:
+            with open(file_path, 'r') as f:
+                with mmap.mmap(f.fileno(), 0, access=mmap.ACCESS_READ) as mm:
+                    file_content = mm.read().decode('utf-8', errors='ignore')
+                    return search_lines(file_content.splitlines(), file_path, search_string, use_regex)
     except Exception as e:
         return None
+
+def search_lines(lines, file_path, search_string, use_regex=False):
+    """Search lines in a file for the given string or regex."""
+    for line_num, line in enumerate(lines, 1):
+        if use_regex:
+            if re.search(search_string, line):
+                return f"Found in {file_path} on line {line_num}: {line.strip()}"
+        else:
+            if search_string in line:
+                return f"Found in {file_path} on line {line_num}: {line.strip()}"
+    return None
 
 def display_system_info(max_workers, output_file=None):
     """Display system information above the progress bars."""
@@ -33,7 +55,6 @@ def display_system_info(max_workers, output_file=None):
         f"  Number of Workers: {max_workers}\n"
         f"{'=' * 40}\n"
     )
-
     if output_file:
         output_file.write(system_info)
     else:
@@ -50,7 +71,6 @@ def display_summary(num_files_scanned, num_matches, max_workers, total_time, out
         f"  Total time taken: {total_time:.2f} seconds\n"
         f"{'=' * 40}\n"
     )
-
     if output_file:
         output_file.write(summary)
     else:
@@ -58,15 +78,14 @@ def display_summary(num_files_scanned, num_matches, max_workers, total_time, out
 
 def scan_and_search(root_dir, search_string, use_regex=False, max_workers=5):
     """Scan directories and search files concurrently."""
-    queue = Queue() 
-    results = []    
+    queue = Queue()
+    results = []
     num_files_scanned = 0
 
-    
     scan_pbar = tqdm(desc="Scanning files", unit="file", position=0, leave=True)
     search_pbar = tqdm(desc="Searching files", unit="file", position=1, leave=True)
 
-    start_time = time.time()  #
+    start_time = time.time()
 
     def producer():
         """Producer thread: Scans directories and adds files to the queue."""
@@ -78,15 +97,15 @@ def scan_and_search(root_dir, search_string, use_regex=False, max_workers=5):
                 with os.scandir(current_dir) as it:
                     for entry in it:
                         if entry.is_file(follow_symlinks=False):
-                            queue.put(entry.path)  
+                            queue.put(entry.path)
                             num_files_scanned += 1
-                            scan_pbar.update(1)  
+                            scan_pbar.update(1)
                         elif entry.is_dir(follow_symlinks=False):
-                            stack.append(entry.path)  
+                            stack.append(entry.path)
             except PermissionError:
                 print(f"Permission denied: {current_dir}")
 
-        queue.put(None) 
+        queue.put(None)
 
     def consumer():
         """Consumer thread: Fetches files from the queue and searches them."""
@@ -95,27 +114,24 @@ def scan_and_search(root_dir, search_string, use_regex=False, max_workers=5):
             while True:
                 file_path = queue.get()
                 if file_path is None:
-                    break  
-                futures.append(executor.submit(search_file_mmap, file_path, search_string, use_regex))
-                search_pbar.update(1)  
+                    break
+                futures.append(executor.submit(search_file, file_path, search_string, use_regex))
+                search_pbar.update(1)
 
-            
             for future in as_completed(futures):
                 result = future.result()
                 if result:
                     results.append(result)
 
-
     producer_thread = ThreadPoolExecutor(max_workers=1)
     producer_thread.submit(producer)
     consumer()
 
-    
     scan_pbar.close()
     search_pbar.close()
 
-    end_time = time.time()  
-    total_time = end_time - start_time  
+    end_time = time.time()
+    total_time = end_time - start_time
 
     return results, num_files_scanned, total_time
 

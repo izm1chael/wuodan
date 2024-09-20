@@ -5,7 +5,7 @@ with open("README.md", "r", encoding="utf-8") as fh:
 
 setup(
     name="wuodan",
-    version="0.1.0",
+    version="0.1.1",
     packages=['wuodan'],  
     include_package_data=True,
     install_requires=[

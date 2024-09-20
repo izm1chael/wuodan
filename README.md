@@ -3,6 +3,9 @@
 
 Wuodan is a command-line tool designed for efficiently searching through files and directories for strings or regular expressions. It is especially useful for **threat hunting** and **Digital Forensics and Incident Response (DFIR)**, where rapid analysis of logs, configuration files, or other data is critical.
 
+[![Upload Python Package](https://github.com/izm1chael/wuodan/actions/workflows/python-publish.yml/badge.svg)](https://github.com/izm1chael/wuodan/actions/workflows/python-publish.yml)
+
+
 ## Features  
 
 -  **Search files and directories**: Recursively search for a string or regex pattern within files in a directory. Ideal for locating key artefacts during incident response or threat investigations.

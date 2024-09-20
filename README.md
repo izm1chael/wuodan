@@ -1,6 +1,8 @@
 
 # Wuodan CLI
 
+![banner](https://github.com/user-attachments/assets/828d0f43-cba3-4812-910a-32d8e424d0b1)
+
 Wuodan is a command-line tool designed for efficiently searching through files and directories for strings or regular expressions. It is especially useful for **threat hunting** and **Digital Forensics and Incident Response (DFIR)**, where rapid analysis of logs, configuration files, or other data is critical.
 
 [![Upload Python Package](https://github.com/izm1chael/wuodan/actions/workflows/python-publish.yml/badge.svg)](https://github.com/izm1chael/wuodan/actions/workflows/python-publish.yml)

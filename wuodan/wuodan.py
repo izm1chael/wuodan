@@ -14,44 +14,52 @@ from tqdm import tqdm
 
 def search_file(file_path, search_string, use_regex=False):
     """Search a file for the given string or regex."""
+    matches = []
     try:
         if file_path.endswith('.gz'):
             with gzip.open(file_path, 'rt', encoding='utf-8', errors='ignore') as f:
-                return search_lines(f, file_path, search_string, use_regex)
+                matches.extend(search_lines(f, file_path, search_string, use_regex))
         elif file_path.endswith('.bz2'):
             with bz2.open(file_path, 'rt', encoding='utf-8', errors='ignore') as f:
-                return search_lines(f, file_path, search_string, use_regex)
+                matches.extend(search_lines(f, file_path, search_string, use_regex))
         elif file_path.endswith('.xz'):
             with lzma.open(file_path, 'rt', encoding='utf-8', errors='ignore') as f:
-                return search_lines(f, file_path, search_string, use_regex)
+                matches.extend(search_lines(f, file_path, search_string, use_regex))
         elif file_path.endswith('.zip'):
             with zipfile.ZipFile(file_path, 'r') as z:
                 for zip_info in z.infolist():
                     with z.open(zip_info, 'r') as f:
-                        return search_lines((line.decode('utf-8', errors='ignore') for line in f), file_path + "::" + zip_info.filename, search_string, use_regex)
+                        lines = (line.decode('utf-8', errors='ignore') for line in f)
+                        matches.extend(search_lines(lines, file_path + "::" + zip_info.filename, search_string, use_regex))
         else:
-            with open(file_path, 'r') as f:
+            with open(file_path, 'rb') as f:
                 with mmap.mmap(f.fileno(), 0, access=mmap.ACCESS_READ) as mm:
                     file_content = mm.read().decode('utf-8', errors='ignore')
-                    return search_lines(file_content.splitlines(), file_path, search_string, use_regex)
-    except Exception as e:
-        return None
+                    matches.extend(search_lines(file_content.splitlines(), file_path, search_string, use_regex))
+    except Exception:
+        return []
+    return matches
 
 def search_lines(lines, file_path, search_string, use_regex=False):
     """Search lines in a file for the given string or regex."""
+    matches = []
     for line_num, line in enumerate(lines, 1):
         if use_regex:
             if re.search(search_string, line):
-                return f"Found in {file_path} on line {line_num}: {line.strip()}"
+                matches.append(f"Found in {file_path} on line {line_num}: {line.strip()}")
         else:
             if search_string in line:
-                return f"Found in {file_path} on line {line_num}: {line.strip()}"
-    return None
+                matches.append(f"Found in {file_path} on line {line_num}: {line.strip()}")
+    return matches
 
 def display_system_info(max_workers, output_file=None):
     """Display system information above the progress bars."""
+    cpu_count = psutil.cpu_count(logical=True)
+    mem_info = psutil.virtual_memory()
     system_info = (
         "System Information:\n"
+        f"  CPUs available: {cpu_count}\n"
+        f"  Total Memory: {mem_info.total // (1024 ** 2)} MB\n"
         f"  Number of Workers: {max_workers}\n"
         f"{'=' * 40}\n"
     )
@@ -116,12 +124,12 @@ def scan_and_search(root_dir, search_string, use_regex=False, max_workers=5):
                 if file_path is None:
                     break
                 futures.append(executor.submit(search_file, file_path, search_string, use_regex))
-                search_pbar.update(1)
 
             for future in as_completed(futures):
                 result = future.result()
                 if result:
-                    results.append(result)
+                    results.extend(result)
+                search_pbar.update(1)
 
     producer_thread = ThreadPoolExecutor(max_workers=1)
     producer_thread.submit(producer)
